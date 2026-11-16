@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0a1a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Tempus — Countdown Lock Screen</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ===== Ambient Canvas Background ===== -->
+  <canvas id="ambient-canvas"></canvas>
+
+  <!-- ===== Particle Overlay ===== -->
+  <canvas id="particle-canvas"></canvas>
+
+  <!-- ===== Lock Screen ===== -->
+  <div id="lock-screen" class="lock-screen">
+    <!-- Top Status Bar -->
+    <header class="status-bar">
+      <span class="status-time" id="status-time"></span>
+      <span class="status-date" id="status-date"></span>
+    </header>
+
+    <!-- Main Countdown Display -->
+    <main class="countdown-main">
+      <div class="event-label" id="event-label">Loading…</div>
+
+      <div class="countdown-ring-container">
+        <svg class="countdown-ring" viewBox="0 0 260 260">
+          <defs>
+            <linearGradient id="ring-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:var(--accent-1)" />
+              <stop offset="100%" style="stop-color:var(--accent-2)" />
+            </linearGradient>
+          </defs>
+          <circle class="ring-track" cx="130" cy="130" r="120" />
+          <circle class="ring-progress" id="ring-progress" cx="130" cy="130" r="120" />
+        </svg>
+        <div class="countdown-digits" id="countdown-digits">
+          <div class="digit-group">
+            <span class="digit" id="days">00</span>
+            <span class="digit-label">DAYS</span>
+          </div>
+          <span class="digit-sep">:</span>
+          <div class="digit-group">
+            <span class="digit" id="hours">00</span>
+            <span class="digit-label">HRS</span>
+          </div>
+          <span class="digit-sep">:</span>
+          <div class="digit-group">
+            <span class="digit" id="minutes">00</span>
+            <span class="digit-label">MIN</span>
+          </div>
+          <span class="digit-sep">:</span>
+          <div class="digit-group">
+            <span class="digit" id="seconds">00</span>
+            <span class="digit-label">SEC</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Progress Insight -->
+      <div class="progress-insight" id="progress-insight">
+        <span class="insight-icon">⏳</span>
+        <span class="insight-text" id="insight-text"></span>
+      </div>
+
+      <!-- Motivational Quote -->
+      <div class="quote-container" id="quote-container">
+        <p class="quote-text" id="quote-text"></p>
+      </div>
+    </main>
+
+    <!-- Bottom Actions -->
+    <footer class="lock-footer">
+      <button class="footer-btn" id="btn-fullscreen" title="Fullscreen">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+      </button>
+      <button class="footer-btn" id="btn-settings" title="Settings">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72 1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      </button>
+      <button class="footer-btn" id="btn-theme" title="Change Theme">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72 1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      </button>
+      <button class="footer-btn" id="btn-wake" title="Keep Screen Awake">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6m-5-2a7 7 0 1 1 4 0"/></svg>
+      </button>
+    </footer>
+
+    <!-- Swipe hint -->
+    <div class="swipe-hint" id="swipe-hint">
+      <div class="swipe-pill"></div>
+    </div>
+  </div>
+
+  <!-- ===== Settings Panel ===== -->
+  <div id="settings-panel" class="settings-panel hidden">
+    <div class="settings-card">
+      <div class="settings-header">
+        <h2>Configure Countdown</h2>
+        <button class="close-btn" id="close-settings">&times;</button>
+      </div>
+
+      <div class="settings-body">
+        <div class="form-group">
+          <label for="event-name">Event Name</label>
+          <input type="text" id="event-name" placeholder="e.g. Product Launch" maxlength="60" />
+        </div>
+
+        <div class="form-group">
+          <label for="event-date">Target Date & Time</label>
+          <input type="datetime-local" id="event-date" />
+        </div>
+
+        <div class="form-group">
+          <label>Visual Theme</label>
+          <div class="theme-grid" id="theme-grid">
+            <button class="theme-swatch active" data-theme="aurora" title="Aurora">
+              <span style="background:linear-gradient(135deg,#6366f1,#a855f7,#ec4899)"></span>
+            </button>
+            <button class="theme-swatch" data-theme="ocean" title="Ocean">
+              <span style="background:linear-gradient(135deg,#06b6d4,#3b82f6,#1e40af)"></span>
+            </button>
+            <button class="theme-swatch" data-theme="sunset" title="Sunset">
+              <span style="background:linear-gradient(135deg,#f97316,#ef4444,#dc2626)"></span>
+            </button>
+            <button class="theme-swatch" data-theme="forest" title="Forest">
+              <span style="background:linear-gradient(135deg,#22c55e,#16a34a,#15803d)"></span>
+            </button>
+            <button class="theme-swatch" data-theme="midnight" title="Midnight">
+              <span style="background:linear-gradient(135deg,#1e293b,#334155,#475569)"></span>
+            </button>
+            <button class="theme-swatch" data-theme="rose" title="Rosé">
+              <span style="background:linear-gradient(135deg,#fb7185,#f43f5e,#be123c)"></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Urgency Mode</label>
+          <p class="form-hint">When enabled, the screen intensifies as the deadline approaches — colors shift warmer and particles accelerate.</p>
+          <label class="toggle">
+            <input type="checkbox" id="urgency-toggle" checked />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label>Show Motivational Quotes</label>
+          <label class="toggle">
+            <input type="checkbox" id="quotes-toggle" checked />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <button class="save-btn" id="save-settings">Save & Lock</button>
+      </div>
+
+      <!-- Presets -->
+      <div class="presets-section">
+        <h3>Quick Presets</h3>
+        <div class="presets-grid">
+          <button class="preset-btn" data-preset="new-year">🎆 New Year</button>
+          <button class="preset-btn" data-preset="focus-25">🧠 Focus 25m</button>
+          <button class="preset-btn" data-preset="focus-50">🎯 Focus 50m</button>
+          <button class="preset-btn" data-preset="break-5">☕ Break 5m</button>
+          <button class="preset-btn" data-preset="workout">💪 Workout 45m</button>
+          <button class="preset-btn" data-preset="custom-1h">⏰ 1 Hour</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Celebration Overlay ===== -->
+  <canvas id="confetti-canvas" class="confetti-canvas hidden"></canvas>
+  <div id="celebration" class="celebration hidden">
+    <div class="celebration-content">
+      <div class="celebration-emoji">🎉</div>
+      <h1 class="celebration-title">Time's Up!</h1>
+      <p class="celebration-sub" id="celebration-event"></p>
+      <button class="celebration-btn" id="celebration-dismiss">Set New Countdown</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
