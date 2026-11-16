@@ -1,295 +1,353 @@
 /* =========================================================
-   TEMPUS — Countdown Lock Screen  ·  Application Logic
+   TEMPUS — 3D Countdown Lock Screen  ·  WOW Edition
    ========================================================= */
-
 (() => {
   'use strict';
 
-  // ── Quotes ──────────────────────────────────────────────
+  // ── Quotes ──
   const QUOTES = [
     "The secret of getting ahead is getting started. — Mark Twain",
     "Time is what we want most, but what we use worst. — William Penn",
     "An inch of time is an inch of gold. — Chinese Proverb",
     "Lost time is never found again. — Benjamin Franklin",
-    "The two most powerful warriors are patience and time. — Leo Tolstoy",
-    "Time flies over us, but leaves its shadow behind. — Nathaniel Hawthorne",
-    "Better three hours too soon than a minute too late. — William Shakespeare",
-    "The bad news is time flies. The good news is you're the pilot. — Michael Altshuler",
-    "Time is the most valuable thing a man can spend. — Theophrastus",
-    "Don't watch the clock; do what it does. Keep going. — Sam Levenson",
-    "Every second is of infinite value. — Johann Wolfgang von Goethe",
-    "The key is not spending time, but investing it. — Stephen Covey",
-    "You may delay, but time will not. — Benjamin Franklin",
-    "Time waits for no one. — Folklore",
-    "Yesterday is gone. Tomorrow has not yet come. We have only today. — Mother Teresa",
+    "The two most powerful warriors are patience and time. — Tolstoy",
+    "The bad news is time flies. The good news is you're the pilot.",
+    "Don't watch the clock; do what it does. Keep going. — Levenson",
+    "Every second is of infinite value. — Goethe",
     "One day or day one. You decide.",
-    "Small steps every day lead to massive results.",
     "Focus on progress, not perfection.",
-    "Discipline is choosing between what you want now and what you want most.",
+    "Discipline is choosing what you want most over what you want now.",
     "Your future self will thank you.",
+    "Small steps every day lead to massive results.",
+    "Time waits for no one.",
+    "You may delay, but time will not. — Franklin",
   ];
 
-  // ── Theme color maps ───────────────────────────────────
+  // ── Theme configs ──
   const THEME_COLORS = {
-    aurora:   { c1: [99,102,241],  c2: [168,85,247],  c3: [236,72,153] },
-    ocean:    { c1: [6,182,212],   c2: [59,130,246],  c3: [30,64,175]  },
-    sunset:   { c1: [249,115,22],  c2: [239,68,68],   c3: [220,38,38]  },
-    forest:   { c1: [34,197,94],   c2: [22,163,74],   c3: [21,128,61]  },
-    midnight: { c1: [148,163,184], c2: [100,116,139], c3: [71,85,105]  },
-    rose:     { c1: [251,113,133], c2: [244,63,94],   c3: [190,18,60]  },
+    cyberpunk: { c1:[0,240,255],   c2:[180,0,255],   c3:[255,0,110] },
+    aurora:    { c1:[99,102,241],   c2:[168,85,247],   c3:[236,72,153] },
+    ocean:     { c1:[6,182,212],    c2:[59,130,246],   c3:[30,64,175] },
+    inferno:   { c1:[255,69,0],     c2:[255,0,128],    c3:[123,0,255] },
+    matrix:    { c1:[0,255,65],     c2:[0,143,17],     c3:[0,255,65] },
+    golden:    { c1:[245,158,11],   c2:[217,119,6],    c3:[251,191,36] },
   };
 
-  // ── State ──────────────────────────────────────────────
+  // ── State ──
   let state = loadState();
   let wakeLockSentinel = null;
-  let quoteInterval = null;
+  let prevDigits = { d:'--', h:'--', m:'--', s:'--' };
 
   function defaultState() {
-    // Default: countdown to next New Year
     const now = new Date();
-    const nextYear = now.getFullYear() + 1;
+    const ny = now.getFullYear() + 1;
     return {
-      eventName: 'New Year ' + nextYear,
-      targetDate: new Date(nextYear, 0, 1, 0, 0, 0).toISOString(),
-      theme: 'aurora',
+      eventName: 'New Year ' + ny,
+      targetDate: new Date(ny, 0, 1).toISOString(),
+      theme: 'cyberpunk',
       urgencyMode: true,
       showQuotes: true,
     };
   }
 
   function loadState() {
-    try {
-      const raw = localStorage.getItem('tempus_state');
-      if (raw) return JSON.parse(raw);
-    } catch (_) {}
+    try { const r = localStorage.getItem('tempus_state'); if (r) return JSON.parse(r); } catch(_){}
     return defaultState();
   }
+  function saveState() { localStorage.setItem('tempus_state', JSON.stringify(state)); }
 
-  function saveState() {
-    localStorage.setItem('tempus_state', JSON.stringify(state));
-  }
+  const $ = s => document.querySelector(s);
 
-  // ── DOM Refs ───────────────────────────────────────────
-  const $ = (sel) => document.querySelector(sel);
-  const statusTime     = $('#status-time');
-  const statusDate     = $('#status-date');
-  const eventLabel     = $('#event-label');
-  const daysEl         = $('#days');
-  const hoursEl        = $('#hours');
-  const minutesEl      = $('#minutes');
-  const secondsEl      = $('#seconds');
-  const ringProgress   = $('#ring-progress');
-  const insightText    = $('#insight-text');
-  const quoteText      = $('#quote-text');
-  const quoteContainer = $('#quote-container');
-  const settingsPanel  = $('#settings-panel');
-  const themeGrid      = $('#theme-grid');
-  const celebration    = $('#celebration');
-  const celebrationEvent = $('#celebration-event');
-  const confettiCanvas = $('#confetti-canvas');
+  // ═══════════════════════════════════════════════════════
+  //  STARFIELD — Depth parallax stars
+  // ═══════════════════════════════════════════════════════
+  const starCanvas = $('#starfield');
+  const starCtx = starCanvas.getContext('2d');
+  let stars = [];
 
-  // ── Ambient Background ─────────────────────────────────
-  const ambientCanvas = $('#ambient-canvas');
-  const ambientCtx = ambientCanvas.getContext('2d');
-
-  function resizeCanvas() {
+  function initStarfield() {
     const dpr = window.devicePixelRatio || 1;
-    ambientCanvas.width = window.innerWidth * dpr;
-    ambientCanvas.height = window.innerHeight * dpr;
-    ambientCtx.scale(dpr, dpr);
-    ambientCanvas.style.width = window.innerWidth + 'px';
-    ambientCanvas.style.height = window.innerHeight + 'px';
+    starCanvas.width = innerWidth * dpr;
+    starCanvas.height = innerHeight * dpr;
+    starCtx.scale(dpr, dpr);
+    starCanvas.style.width = innerWidth + 'px';
+    starCanvas.style.height = innerHeight + 'px';
 
-    const particleCanvas = $('#particle-canvas');
-    particleCanvas.width = window.innerWidth * dpr;
-    particleCanvas.height = window.innerHeight * dpr;
-    const pctx = particleCanvas.getContext('2d');
-    pctx.scale(dpr, dpr);
-    particleCanvas.style.width = window.innerWidth + 'px';
-    particleCanvas.style.height = window.innerHeight + 'px';
-  }
-
-  // Gentle animated gradient orbs
-  const orbs = [];
-  function initOrbs() {
-    orbs.length = 0;
-    const colors = THEME_COLORS[state.theme] || THEME_COLORS.aurora;
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    for (let i = 0; i < 4; i++) {
-      orbs.push({
-        x: Math.random() * w,
-        y: Math.random() * h,
-        r: 150 + Math.random() * 200,
-        vx: (Math.random() - 0.5) * 0.4,
-        vy: (Math.random() - 0.5) * 0.4,
-        color: Object.values(colors)[i % 3],
-        alpha: 0.15 + Math.random() * 0.1,
-      });
-    }
-  }
-
-  function drawOrbs() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    ambientCtx.clearRect(0, 0, w, h);
-
-    for (const orb of orbs) {
-      orb.x += orb.vx;
-      orb.y += orb.vy;
-      if (orb.x < -orb.r) orb.x = w + orb.r;
-      if (orb.x > w + orb.r) orb.x = -orb.r;
-      if (orb.y < -orb.r) orb.y = h + orb.r;
-      if (orb.y > h + orb.r) orb.y = -orb.r;
-
-      const grad = ambientCtx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, orb.r);
-      grad.addColorStop(0, `rgba(${orb.color.join(',')}, ${orb.alpha})`);
-      grad.addColorStop(1, `rgba(${orb.color.join(',')}, 0)`);
-      ambientCtx.fillStyle = grad;
-      ambientCtx.fillRect(0, 0, w, h);
-    }
-  }
-
-  // ── Particles ──────────────────────────────────────────
-  const particles = [];
-  let particleSpeed = 1;
-
-  function initParticles() {
-    particles.length = 0;
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    const count = Math.min(60, Math.floor((w * h) / 15000));
+    stars = [];
+    const count = Math.min(200, Math.floor((innerWidth * innerHeight) / 5000));
     for (let i = 0; i < count; i++) {
-      particles.push({
-        x: Math.random() * w,
-        y: Math.random() * h,
-        r: 1 + Math.random() * 2,
-        vy: -(0.2 + Math.random() * 0.5),
-        alpha: 0.15 + Math.random() * 0.35,
+      stars.push({
+        x: Math.random() * innerWidth,
+        y: Math.random() * innerHeight,
+        z: Math.random(), // depth 0-1
+        r: 0.3 + Math.random() * 1.5,
         flicker: Math.random() * Math.PI * 2,
       });
     }
   }
 
-  function drawParticles() {
-    const canvas = $('#particle-canvas');
-    const ctx = canvas.getContext('2d');
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    ctx.clearRect(0, 0, w, h);
-
-    const colors = THEME_COLORS[state.theme] || THEME_COLORS.aurora;
-    const c = colors.c1;
-
-    for (const p of particles) {
-      p.y += p.vy * particleSpeed;
-      p.flicker += 0.02;
-      if (p.y < -10) {
-        p.y = h + 10;
-        p.x = Math.random() * w;
+  function drawStarfield() {
+    starCtx.clearRect(0, 0, innerWidth, innerHeight);
+    const colors = THEME_COLORS[state.theme] || THEME_COLORS.cyberpunk;
+    for (const s of stars) {
+      s.flicker += 0.01 + s.z * 0.02;
+      const alpha = (0.2 + 0.5 * s.z) * (0.6 + 0.4 * Math.sin(s.flicker));
+      const c = s.z > 0.7 ? colors.c1 : s.z > 0.4 ? colors.c2 : colors.c3;
+      starCtx.beginPath();
+      starCtx.arc(s.x, s.y, s.r * (0.5 + s.z * 0.5), 0, Math.PI * 2);
+      starCtx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
+      starCtx.fill();
+      // glow on bright stars
+      if (s.z > 0.8) {
+        starCtx.beginPath();
+        starCtx.arc(s.x, s.y, s.r * 3, 0, Math.PI * 2);
+        starCtx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${alpha * 0.1})`;
+        starCtx.fill();
       }
-      const a = p.alpha * (0.6 + 0.4 * Math.sin(p.flicker));
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${a})`;
-      ctx.fill();
     }
   }
 
-  // ── Animation Loop ────────────────────────────────────
+  // ═══════════════════════════════════════════════════════
+  //  3D PARTICLES — Depth-layered with trails
+  // ═══════════════════════════════════════════════════════
+  const pCanvas = $('#particle-canvas');
+  const pCtx = pCanvas.getContext('2d');
+  let particles = [];
+  let particleSpeed = 1;
+
+  function initParticles() {
+    const dpr = window.devicePixelRatio || 1;
+    pCanvas.width = innerWidth * dpr;
+    pCanvas.height = innerHeight * dpr;
+    pCtx.scale(dpr, dpr);
+    pCanvas.style.width = innerWidth + 'px';
+    pCanvas.style.height = innerHeight + 'px';
+
+    particles = [];
+    const count = Math.min(80, Math.floor((innerWidth * innerHeight) / 12000));
+    for (let i = 0; i < count; i++) {
+      particles.push({
+        x: Math.random() * innerWidth,
+        y: Math.random() * innerHeight,
+        z: Math.random(),
+        r: 1 + Math.random() * 3,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: -(0.3 + Math.random() * 0.8),
+        alpha: 0.15 + Math.random() * 0.4,
+        trail: [],
+      });
+    }
+  }
+
+  function drawParticles() {
+    pCtx.clearRect(0, 0, innerWidth, innerHeight);
+    const colors = THEME_COLORS[state.theme] || THEME_COLORS.cyberpunk;
+
+    for (const p of particles) {
+      p.x += p.vx * particleSpeed;
+      p.y += p.vy * particleSpeed * (0.5 + p.z);
+
+      // Wrap
+      if (p.y < -20) { p.y = innerHeight + 20; p.x = Math.random() * innerWidth; p.trail = []; }
+      if (p.x < -20) p.x = innerWidth + 20;
+      if (p.x > innerWidth + 20) p.x = -20;
+
+      // Trail
+      p.trail.push({ x: p.x, y: p.y });
+      if (p.trail.length > 8) p.trail.shift();
+
+      const c = p.z > 0.5 ? colors.c1 : colors.c2;
+
+      // Draw trail
+      if (p.trail.length > 1) {
+        pCtx.beginPath();
+        pCtx.moveTo(p.trail[0].x, p.trail[0].y);
+        for (let i = 1; i < p.trail.length; i++) {
+          pCtx.lineTo(p.trail[i].x, p.trail[i].y);
+        }
+        pCtx.strokeStyle = `rgba(${c[0]},${c[1]},${c[2]},${p.alpha * 0.15})`;
+        pCtx.lineWidth = p.r * 0.5;
+        pCtx.stroke();
+      }
+
+      // Draw particle
+      const size = p.r * (0.5 + p.z * 0.5);
+      pCtx.beginPath();
+      pCtx.arc(p.x, p.y, size, 0, Math.PI * 2);
+      pCtx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${p.alpha})`;
+      pCtx.fill();
+
+      // Glow
+      pCtx.beginPath();
+      pCtx.arc(p.x, p.y, size * 3, 0, Math.PI * 2);
+      pCtx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${p.alpha * 0.08})`;
+      pCtx.fill();
+    }
+
+    // Connection lines between close particles
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const dx = particles[i].x - particles[j].x;
+        const dy = particles[i].y - particles[j].y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 100) {
+          const c = colors.c1;
+          pCtx.beginPath();
+          pCtx.moveTo(particles[i].x, particles[i].y);
+          pCtx.lineTo(particles[j].x, particles[j].y);
+          pCtx.strokeStyle = `rgba(${c[0]},${c[1]},${c[2]},${0.04 * (1 - dist / 100)})`;
+          pCtx.lineWidth = 0.5;
+          pCtx.stroke();
+        }
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  3D MOUSE TILT
+  // ═══════════════════════════════════════════════════════
+  const tiltContainer = $('#tilt-container');
+  let mouseX = 0, mouseY = 0;
+  let currentTiltX = 0, currentTiltY = 0;
+
+  document.addEventListener('mousemove', e => {
+    mouseX = (e.clientX / innerWidth - 0.5) * 2;  // -1 to 1
+    mouseY = (e.clientY / innerHeight - 0.5) * 2;
+  });
+
+  document.addEventListener('touchmove', e => {
+    const t = e.touches[0];
+    mouseX = (t.clientX / innerWidth - 0.5) * 2;
+    mouseY = (t.clientY / innerHeight - 0.5) * 2;
+  }, { passive: true });
+
+  document.addEventListener('mouseleave', () => { mouseX = 0; mouseY = 0; });
+
+  function updateTilt() {
+    // Smooth interpolation
+    currentTiltX += (mouseY * -8 - currentTiltX) * 0.06;
+    currentTiltY += (mouseX * 8 - currentTiltY) * 0.06;
+    tiltContainer.style.transform =
+      `perspective(1000px) rotateX(${currentTiltX}deg) rotateY(${currentTiltY}deg)`;
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  ANIMATION LOOP
+  // ═══════════════════════════════════════════════════════
   function animate() {
-    drawOrbs();
+    drawStarfield();
     drawParticles();
+    updateTilt();
     requestAnimationFrame(animate);
   }
 
-  // ── Countdown Logic ────────────────────────────────────
-  const RING_CIRCUMFERENCE = 2 * Math.PI * 120; // ~753.98
+  // ═══════════════════════════════════════════════════════
+  //  COUNTDOWN
+  // ═══════════════════════════════════════════════════════
+  const RING_C = 2 * Math.PI * 140;
+
+  function flipDigit(id, newVal) {
+    const card = $(id);
+    if (!card) return;
+    const front = card.querySelector('.flip-front span');
+    const back = card.querySelector('.flip-back span');
+    const oldVal = front.textContent;
+    if (oldVal === newVal) return;
+
+    back.textContent = newVal;
+    card.classList.add('flipping');
+
+    setTimeout(() => {
+      front.textContent = newVal;
+      card.classList.remove('flipping');
+      // Reset inner transform
+      card.querySelector('.flip-card-inner').style.transform = '';
+    }, 600);
+  }
 
   function updateCountdown() {
     const now = new Date();
 
     // Status bar
-    statusTime.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    statusDate.textContent = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    $('#status-time').textContent = now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+    $('#status-date').textContent = now.toLocaleDateString([], { weekday:'short', month:'short', day:'numeric' });
 
-    // Event label
-    eventLabel.textContent = state.eventName || 'Countdown';
+    // Label
+    const label = state.eventName || 'Countdown';
+    $('#event-label').textContent = label;
+    $('#event-label-glow').textContent = label;
 
     const target = new Date(state.targetDate);
     let diff = target - now;
 
-    // Finished?
     if (diff <= 0) {
-      daysEl.textContent = '00';
-      hoursEl.textContent = '00';
-      minutesEl.textContent = '00';
-      secondsEl.textContent = '00';
-      ringProgress.style.strokeDashoffset = RING_CIRCUMFERENCE;
-      insightText.textContent = 'Countdown complete!';
+      ['#flip-days','#flip-hours','#flip-mins','#flip-secs'].forEach(id => {
+        flipDigit(id, '00');
+      });
+      $('#ring-progress').style.strokeDashoffset = RING_C;
+      $('#ring-progress-glow').style.strokeDashoffset = RING_C;
+      $('#insight-text').textContent = 'Countdown complete!';
+      $('#progress-fill').style.width = '100%';
+      $('#progress-glow').style.width = '100%';
+      $('#progress-text').textContent = '100% complete';
       showCelebration();
       return;
     }
 
-    // Calculate
-    const totalSeconds = Math.floor(diff / 1000);
-    const d = Math.floor(totalSeconds / 86400);
-    const h = Math.floor((totalSeconds % 86400) / 3600);
-    const m = Math.floor((totalSeconds % 3600) / 60);
-    const s = totalSeconds % 60;
+    const ts = Math.floor(diff / 1000);
+    const d = String(Math.floor(ts / 86400)).padStart(2, '0');
+    const h = String(Math.floor((ts % 86400) / 3600)).padStart(2, '0');
+    const m = String(Math.floor((ts % 3600) / 60)).padStart(2, '0');
+    const s = String(ts % 60).padStart(2, '0');
 
-    daysEl.textContent = String(d).padStart(2, '0');
-    hoursEl.textContent = String(h).padStart(2, '0');
-    minutesEl.textContent = String(m).padStart(2, '0');
-    secondsEl.textContent = String(s).padStart(2, '0');
+    // Flip only changed digits
+    if (d !== prevDigits.d) flipDigit('#flip-days', d);
+    if (h !== prevDigits.h) flipDigit('#flip-hours', h);
+    if (m !== prevDigits.m) flipDigit('#flip-mins', m);
+    if (s !== prevDigits.s) flipDigit('#flip-secs', s);
+    prevDigits = { d, h, m, s };
 
-    // Ring progress — based on percentage of a 24-hour day elapsed
-    // We use fraction of current day remaining
-    const totalDurationMs = target - new Date(state.targetDate).getTime() + (target - now);
-    const createdDate = new Date(localStorage.getItem('tempus_created') || now.toISOString());
-    const totalSpan = target - createdDate;
-    const elapsed = now - createdDate;
-    const fraction = totalSpan > 0 ? Math.min(elapsed / totalSpan, 1) : 1;
-    ringProgress.style.strokeDashoffset = RING_CIRCUMFERENCE * (1 - fraction);
+    // Ring
+    const created = new Date(localStorage.getItem('tempus_created') || now.toISOString());
+    const totalSpan = target - created;
+    const elapsed = now - created;
+    const frac = totalSpan > 0 ? Math.min(elapsed / totalSpan, 1) : 1;
+    const offset = RING_C * (1 - frac);
+    $('#ring-progress').style.strokeDashoffset = offset;
+    $('#ring-progress-glow').style.strokeDashoffset = offset;
 
-    // Progress insight
-    updateInsight(d, h, m, s, fraction);
+    // Progress bar
+    const pct = Math.round(frac * 100);
+    $('#progress-fill').style.width = pct + '%';
+    $('#progress-glow').style.width = pct + '%';
+    $('#progress-text').textContent = pct + '% complete';
 
-    // Urgency
-    updateUrgency(d, h, fraction);
+    // Insight
+    updateInsight(+d, +h, +m, +s, pct);
+    updateUrgency(+d, +h, frac);
   }
 
-  function updateInsight(d, h, m, s, fraction) {
-    const pct = Math.round(fraction * 100);
-    let text = '';
-    if (d > 30) {
-      text = `${pct}% elapsed · ${d} days remaining`;
-    } else if (d > 1) {
-      text = `${pct}% elapsed · ${d} days, ${h}h left`;
-    } else if (d === 1) {
-      text = `${pct}% elapsed · Tomorrow!`;
-    } else if (h > 1) {
-      text = `${pct}% elapsed · ${h}h ${m}m remaining`;
-    } else if (h === 1) {
-      text = `Almost there · ${m}m ${s}s left`;
-    } else if (m > 5) {
-      text = `Final stretch · ${m}m ${s}s`;
-    } else {
-      text = `🔥 ${m}m ${s}s — stay focused!`;
-    }
-    insightText.textContent = text;
+  function updateInsight(d, h, m, s, pct) {
+    let t = '';
+    if (d > 30) t = `${pct}% elapsed · ${d} days remaining`;
+    else if (d > 1) t = `${pct}% elapsed · ${d} days, ${h}h left`;
+    else if (d === 1) t = `${pct}% elapsed · Tomorrow!`;
+    else if (h > 1) t = `${pct}% elapsed · ${h}h ${m}m remaining`;
+    else if (h === 1) t = `Almost there · ${m}m ${s}s left`;
+    else if (m > 5) t = `Final stretch · ${m}m ${s}s`;
+    else t = `🔥 ${m}m ${s}s — stay focused!`;
+    $('#insight-text').textContent = t;
   }
 
-  function updateUrgency(d, h, fraction) {
+  function updateUrgency(d, h, frac) {
     const main = $('.countdown-main');
     main.classList.remove('urgency-high', 'urgency-critical');
+    if (!state.urgencyMode) { particleSpeed = 1; return; }
 
-    if (!state.urgencyMode) return;
-
-    if (fraction > 0.95 || (d === 0 && h < 1)) {
+    if (frac > 0.95 || (d === 0 && h < 1)) {
       main.classList.add('urgency-critical');
-      particleSpeed = 3;
-    } else if (fraction > 0.85 || (d === 0 && h < 6)) {
+      particleSpeed = 3.5;
+    } else if (frac > 0.85 || (d === 0 && h < 6)) {
       main.classList.add('urgency-high');
       particleSpeed = 2;
     } else {
@@ -297,214 +355,164 @@
     }
   }
 
-  // ── Celebration ────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════
+  //  CELEBRATION
+  // ═══════════════════════════════════════════════════════
   function showCelebration() {
-    celebration.classList.remove('hidden');
-    confettiCanvas.classList.remove('hidden');
-    celebrationEvent.textContent = state.eventName;
+    $('#celebration').classList.remove('hidden');
+    $('#confetti-canvas').classList.remove('hidden');
+    $('#celebration-event').textContent = state.eventName;
     launchConfetti();
-
-    // Play subtle sound if possible
     try {
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const oscillator = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      oscillator.connect(gain);
-      gain.connect(audioCtx.destination);
-      oscillator.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
-      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 1.5);
-      oscillator.start(audioCtx.currentTime);
-      oscillator.stop(audioCtx.currentTime + 1.5);
-    } catch (_) {}
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      [523.25, 659.25, 783.99].forEach((freq, i) => {
+        const o = ac.createOscillator();
+        const g = ac.createGain();
+        o.connect(g); g.connect(ac.destination);
+        o.frequency.setValueAtTime(freq, ac.currentTime + i * 0.15);
+        g.gain.setValueAtTime(0.08, ac.currentTime + i * 0.15);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + i * 0.15 + 1);
+        o.start(ac.currentTime + i * 0.15);
+        o.stop(ac.currentTime + i * 0.15 + 1);
+      });
+    } catch(_){}
   }
 
   function launchConfetti() {
-    const ctx = confettiCanvas.getContext('2d');
+    const cv = $('#confetti-canvas');
+    const ctx = cv.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
-    confettiCanvas.width = window.innerWidth * dpr;
-    confettiCanvas.height = window.innerHeight * dpr;
+    cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
     ctx.scale(dpr, dpr);
-    confettiCanvas.style.width = window.innerWidth + 'px';
-    confettiCanvas.style.height = window.innerHeight + 'px';
+    cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
 
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    const confetti = [];
-    const colors = ['#6366f1','#a855f7','#ec4899','#f59e0b','#22c55e','#06b6d4','#f43f5e'];
-
-    for (let i = 0; i < 150; i++) {
-      confetti.push({
-        x: Math.random() * w,
-        y: Math.random() * h - h,
-        r: 3 + Math.random() * 5,
+    const pieces = [];
+    const colors = ['#00f0ff','#b400ff','#ff006e','#f59e0b','#22c55e','#3b82f6','#f43f5e','#fbbf24'];
+    for (let i = 0; i < 200; i++) {
+      pieces.push({
+        x: Math.random() * innerWidth,
+        y: Math.random() * innerHeight - innerHeight,
+        w: 4 + Math.random() * 6,
+        h: 8 + Math.random() * 12,
         color: colors[Math.floor(Math.random() * colors.length)],
-        vy: 2 + Math.random() * 4,
-        vx: (Math.random() - 0.5) * 3,
+        vy: 2 + Math.random() * 5,
+        vx: (Math.random() - 0.5) * 4,
         rot: Math.random() * 360,
-        rotSpeed: (Math.random() - 0.5) * 10,
+        rs: (Math.random() - 0.5) * 12,
       });
     }
-
-    let frames = 0;
-    function drawConfetti() {
-      ctx.clearRect(0, 0, w, h);
-      for (const c of confetti) {
-        c.x += c.vx;
-        c.y += c.vy;
-        c.rot += c.rotSpeed;
-        c.vy += 0.05; // gravity
-
+    let f = 0;
+    (function draw() {
+      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      for (const p of pieces) {
+        p.x += p.vx; p.y += p.vy; p.vy += 0.04; p.rot += p.rs;
         ctx.save();
-        ctx.translate(c.x, c.y);
-        ctx.rotate((c.rot * Math.PI) / 180);
-        ctx.fillStyle = c.color;
-        ctx.fillRect(-c.r / 2, -c.r, c.r, c.r * 2);
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot * Math.PI / 180);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = Math.max(0, 1 - f / 350);
+        ctx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
         ctx.restore();
       }
-      frames++;
-      if (frames < 300) {
-        requestAnimationFrame(drawConfetti);
-      } else {
-        ctx.clearRect(0, 0, w, h);
-      }
-    }
-    drawConfetti();
+      if (++f < 400) requestAnimationFrame(draw);
+      else ctx.clearRect(0, 0, innerWidth, innerHeight);
+    })();
   }
 
-  // ── Quotes ─────────────────────────────────────────────
-  function showRandomQuote() {
-    if (!state.showQuotes) {
-      quoteContainer.style.display = 'none';
-      return;
-    }
-    quoteContainer.style.display = '';
+  // ═══════════════════════════════════════════════════════
+  //  QUOTES
+  // ═══════════════════════════════════════════════════════
+  function showQuote() {
+    if (!state.showQuotes) { $('#quote-container').style.display = 'none'; return; }
+    $('#quote-container').style.display = '';
+    const qt = $('#quote-text');
     const q = QUOTES[Math.floor(Math.random() * QUOTES.length)];
-    quoteText.style.opacity = '0';
+    qt.style.opacity = '0';
     setTimeout(() => {
-      quoteText.textContent = `"${q}"`;
-      quoteText.style.transition = 'opacity 0.8s ease';
-      quoteText.style.opacity = '1';
-    }, 300);
+      qt.textContent = `"${q}"`;
+      qt.style.transition = 'opacity 1s ease';
+      qt.style.opacity = '1';
+    }, 400);
   }
 
-  // ── Theme ──────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════
+  //  THEME
+  // ═══════════════════════════════════════════════════════
   function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     state.theme = theme;
-
-    // Update active swatch
-    themeGrid.querySelectorAll('.theme-swatch').forEach((s) => {
-      s.classList.toggle('active', s.dataset.theme === theme);
-    });
-
-    // Reinit visuals
-    initOrbs();
+    $('#theme-grid').querySelectorAll('.theme-swatch').forEach(s =>
+      s.classList.toggle('active', s.dataset.theme === theme)
+    );
+    initStarfield();
     initParticles();
   }
 
-  // ── Settings ───────────────────────────────────────────
+  const THEME_LIST = ['cyberpunk','aurora','ocean','inferno','matrix','golden'];
+  function cycleTheme() {
+    const i = THEME_LIST.indexOf(state.theme);
+    applyTheme(THEME_LIST[(i + 1) % THEME_LIST.length]);
+    saveState();
+  }
+
+  // ═══════════════════════════════════════════════════════
+  //  SETTINGS
+  // ═══════════════════════════════════════════════════════
   function openSettings() {
-    settingsPanel.classList.remove('hidden');
+    $('#settings-panel').classList.remove('hidden');
     $('#event-name').value = state.eventName;
-
-    // Format date for datetime-local input
     const d = new Date(state.targetDate);
-    const pad = (n) => String(n).padStart(2, '0');
-    const localISO = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    $('#event-date').value = localISO;
-
+    const p = n => String(n).padStart(2,'0');
+    $('#event-date').value = `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
     $('#urgency-toggle').checked = state.urgencyMode;
     $('#quotes-toggle').checked = state.showQuotes;
-
     applyTheme(state.theme);
   }
 
-  function closeSettings() {
-    settingsPanel.classList.add('hidden');
-  }
+  function closeSettings() { $('#settings-panel').classList.add('hidden'); }
 
   function saveSettings() {
     const name = $('#event-name').value.trim();
     const dateVal = $('#event-date').value;
-
-    if (!name) {
-      $('#event-name').focus();
-      return;
-    }
-    if (!dateVal) {
-      $('#event-date').focus();
-      return;
-    }
+    if (!name) { $('#event-name').focus(); return; }
+    if (!dateVal) { $('#event-date').focus(); return; }
 
     state.eventName = name;
     state.targetDate = new Date(dateVal).toISOString();
     state.urgencyMode = $('#urgency-toggle').checked;
     state.showQuotes = $('#quotes-toggle').checked;
-
-    // Save creation time for progress calculation
     localStorage.setItem('tempus_created', new Date().toISOString());
-
+    prevDigits = { d:'--', h:'--', m:'--', s:'--' };
     saveState();
     closeSettings();
-    celebration.classList.add('hidden');
-    confettiCanvas.classList.add('hidden');
-    showRandomQuote();
+    $('#celebration').classList.add('hidden');
+    $('#confetti-canvas').classList.add('hidden');
+    showQuote();
   }
 
-  // ── Presets ────────────────────────────────────────────
   function applyPreset(preset) {
     const now = new Date();
-    switch (preset) {
-      case 'new-year': {
-        const ny = new Date(now.getFullYear() + 1, 0, 1);
-        $('#event-name').value = 'New Year ' + ny.getFullYear();
-        const pad = (n) => String(n).padStart(2, '0');
-        $('#event-date').value = `${ny.getFullYear()}-01-01T00:00`;
-        break;
-      }
-      case 'focus-25': {
-        const t = new Date(now.getTime() + 25 * 60 * 1000);
-        $('#event-name').value = '🧠 Focus Session';
-        setDateInput(t);
-        break;
-      }
-      case 'focus-50': {
-        const t = new Date(now.getTime() + 50 * 60 * 1000);
-        $('#event-name').value = '🎯 Deep Focus';
-        setDateInput(t);
-        break;
-      }
-      case 'break-5': {
-        const t = new Date(now.getTime() + 5 * 60 * 1000);
-        $('#event-name').value = '☕ Break Time';
-        setDateInput(t);
-        break;
-      }
-      case 'workout': {
-        const t = new Date(now.getTime() + 45 * 60 * 1000);
-        $('#event-name').value = '💪 Workout';
-        setDateInput(t);
-        break;
-      }
-      case 'custom-1h': {
-        const t = new Date(now.getTime() + 60 * 60 * 1000);
-        $('#event-name').value = '⏰ One Hour Timer';
-        setDateInput(t);
-        break;
-      }
-    }
+    const setDT = t => {
+      const p = n => String(n).padStart(2,'0');
+      $('#event-date').value = `${t.getFullYear()}-${p(t.getMonth()+1)}-${p(t.getDate())}T${p(t.getHours())}:${p(t.getMinutes())}`;
+    };
+    const presets = {
+      'new-year': () => { const y = now.getFullYear()+1; $('#event-name').value = 'New Year ' + y; setDT(new Date(y,0,1)); },
+      'focus-25': () => { $('#event-name').value = '🧠 Focus Session'; setDT(new Date(now.getTime()+25*60e3)); },
+      'focus-50': () => { $('#event-name').value = '🎯 Deep Focus';    setDT(new Date(now.getTime()+50*60e3)); },
+      'break-5':  () => { $('#event-name').value = '☕ Break Time';    setDT(new Date(now.getTime()+5*60e3));  },
+      'workout':  () => { $('#event-name').value = '💪 Workout';       setDT(new Date(now.getTime()+45*60e3)); },
+      'custom-1h':() => { $('#event-name').value = '⏰ One Hour';      setDT(new Date(now.getTime()+60*60e3)); },
+    };
+    if (presets[preset]) presets[preset]();
   }
 
-  function setDateInput(d) {
-    const pad = (n) => String(n).padStart(2, '0');
-    $('#event-date').value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
-
-  // ── Fullscreen ─────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════
+  //  FULLSCREEN & WAKE LOCK
+  // ═══════════════════════════════════════════════════════
   function toggleFullscreen() {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      document.documentElement.requestFullscreen().catch(()=>{});
       $('#btn-fullscreen').classList.add('active');
     } else {
       document.exitFullscreen();
@@ -512,37 +520,23 @@
     }
   }
 
-  // ── Wake Lock ──────────────────────────────────────────
   async function toggleWakeLock() {
     const btn = $('#btn-wake');
     if (wakeLockSentinel) {
       await wakeLockSentinel.release();
-      wakeLockSentinel = null;
-      btn.classList.remove('active');
+      wakeLockSentinel = null; btn.classList.remove('active');
       return;
     }
     try {
       wakeLockSentinel = await navigator.wakeLock.request('screen');
       btn.classList.add('active');
-      wakeLockSentinel.addEventListener('release', () => {
-        wakeLockSentinel = null;
-        btn.classList.remove('active');
-      });
-    } catch (_) {
-      // Wake Lock API not supported
-    }
+      wakeLockSentinel.addEventListener('release', () => { wakeLockSentinel = null; btn.classList.remove('active'); });
+    } catch(_){}
   }
 
-  // ── Theme Cycle ────────────────────────────────────────
-  const THEME_LIST = ['aurora', 'ocean', 'sunset', 'forest', 'midnight', 'rose'];
-  function cycleTheme() {
-    const idx = THEME_LIST.indexOf(state.theme);
-    const next = THEME_LIST[(idx + 1) % THEME_LIST.length];
-    applyTheme(next);
-    saveState();
-  }
-
-  // ── Event Listeners ────────────────────────────────────
+  // ═══════════════════════════════════════════════════════
+  //  EVENTS
+  // ═══════════════════════════════════════════════════════
   function bindEvents() {
     $('#btn-settings').addEventListener('click', openSettings);
     $('#close-settings').addEventListener('click', closeSettings);
@@ -551,92 +545,70 @@
     $('#btn-wake').addEventListener('click', toggleWakeLock);
     $('#btn-theme').addEventListener('click', cycleTheme);
     $('#celebration-dismiss').addEventListener('click', () => {
-      celebration.classList.add('hidden');
-      confettiCanvas.classList.add('hidden');
+      $('#celebration').classList.add('hidden');
+      $('#confetti-canvas').classList.add('hidden');
       openSettings();
     });
 
-    // Theme swatches
-    themeGrid.querySelectorAll('.theme-swatch').forEach((s) => {
-      s.addEventListener('click', () => applyTheme(s.dataset.theme));
-    });
+    $('#theme-grid').querySelectorAll('.theme-swatch').forEach(s =>
+      s.addEventListener('click', () => applyTheme(s.dataset.theme))
+    );
 
-    // Presets
-    document.querySelectorAll('.preset-btn').forEach((btn) => {
-      btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
-    });
+    document.querySelectorAll('.preset-btn').forEach(b =>
+      b.addEventListener('click', () => applyPreset(b.dataset.preset))
+    );
 
-    // Click lock screen to open settings (double tap)
     let lastTap = 0;
-    $('.countdown-main').addEventListener('click', (e) => {
+    $('.countdown-main').addEventListener('click', () => {
       const now = Date.now();
-      if (now - lastTap < 300) {
-        openSettings();
-      }
+      if (now - lastTap < 300) openSettings();
       lastTap = now;
     });
 
-    // Keyboard
-    document.addEventListener('keydown', (e) => {
+    document.addEventListener('keydown', e => {
       if (e.key === 'Escape') closeSettings();
       if (e.key === 'f' || e.key === 'F') toggleFullscreen();
       if (e.key === 's' || e.key === 'S') {
-        if (settingsPanel.classList.contains('hidden')) openSettings();
+        if ($('#settings-panel').classList.contains('hidden')) openSettings();
         else closeSettings();
       }
     });
 
-    // Resize
-    window.addEventListener('resize', () => {
-      resizeCanvas();
-      initOrbs();
-      initParticles();
+    window.addEventListener('resize', () => { initStarfield(); initParticles(); });
+
+    $('#settings-panel').addEventListener('click', e => {
+      if (e.target.classList.contains('settings-backdrop')) closeSettings();
     });
 
-    // Settings panel backdrop click
-    settingsPanel.addEventListener('click', (e) => {
-      if (e.target === settingsPanel) closeSettings();
-    });
-
-    // Fullscreen change
     document.addEventListener('fullscreenchange', () => {
       $('#btn-fullscreen').classList.toggle('active', !!document.fullscreenElement);
     });
   }
 
-  // ── Init ───────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════
+  //  INIT
+  // ═══════════════════════════════════════════════════════
   function init() {
-    resizeCanvas();
     applyTheme(state.theme);
-    initOrbs();
+    initStarfield();
     initParticles();
     animate();
 
-    // Set creation date if not set
-    if (!localStorage.getItem('tempus_created')) {
+    if (!localStorage.getItem('tempus_created'))
       localStorage.setItem('tempus_created', new Date().toISOString());
-    }
 
-    // Start countdown
     updateCountdown();
     setInterval(updateCountdown, 1000);
 
-    // Quotes
-    showRandomQuote();
-    quoteInterval = setInterval(showRandomQuote, 30000); // Every 30s
+    showQuote();
+    setInterval(showQuote, 30000);
 
     bindEvents();
 
-    // If no saved state, show settings on first load
-    if (!localStorage.getItem('tempus_state')) {
-      setTimeout(openSettings, 1500);
-    }
+    if (!localStorage.getItem('tempus_state'))
+      setTimeout(openSettings, 1200);
   }
 
-  // Boot
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();
