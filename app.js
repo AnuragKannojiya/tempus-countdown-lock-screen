@@ -37,6 +37,8 @@
   let state = loadState();
   let wakeLockSentinel = null;
   let prevDigits = { d:'--', h:'--', m:'--', s:'--' };
+  let celebrationShown = false;
+  let settingsOpen = false;
 
   function defaultState() {
     const now = new Date();
@@ -290,7 +292,10 @@
       $('#progress-fill').style.width = '100%';
       $('#progress-glow').style.width = '100%';
       $('#progress-text').textContent = '100% complete';
-      showCelebration();
+      if (!celebrationShown && !settingsOpen) {
+        celebrationShown = true;
+        showCelebration();
+      }
       return;
     }
 
@@ -459,7 +464,10 @@
   //  SETTINGS
   // ═══════════════════════════════════════════════════════
   function openSettings() {
+    settingsOpen = true;
     $('#settings-panel').classList.remove('hidden');
+    $('#celebration').classList.add('hidden');
+    $('#confetti-canvas').classList.add('hidden');
     $('#event-name').value = state.eventName;
     const d = new Date(state.targetDate);
     const p = n => String(n).padStart(2,'0');
@@ -469,7 +477,10 @@
     applyTheme(state.theme);
   }
 
-  function closeSettings() { $('#settings-panel').classList.add('hidden'); }
+  function closeSettings() {
+    settingsOpen = false;
+    $('#settings-panel').classList.add('hidden');
+  }
 
   function saveSettings() {
     const name = $('#event-name').value.trim();
@@ -483,6 +494,7 @@
     state.showQuotes = $('#quotes-toggle').checked;
     localStorage.setItem('tempus_created', new Date().toISOString());
     prevDigits = { d:'--', h:'--', m:'--', s:'--' };
+    celebrationShown = false;
     saveState();
     closeSettings();
     $('#celebration').classList.add('hidden');
